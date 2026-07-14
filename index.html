@@ -110,30 +110,39 @@
     </div>
   </div>
 
+  <!-- Cargar primero el script de configuración autogenerado por Vercel -->
+  <script src="/config.js"></script>
+
   <!-- Supabase JS Client & Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    // --- CONFIGURACIÓN DE SUPABASE (Leídas desde variables globales o dejadas en blanco para inyección) ---
-    const SUPABASE_URL = window.env?.SUPABASE_URL || ''; 
-    const SUPABASE_KEY = window.env?.SUPABASE_KEY || ''; 
-
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
-      console.warn("Advertencia: SUPABASE_URL o SUPABASE_KEY no están configuradas en el cliente. Asegúrate de inyectarlas en el despliegue o asignarlas.");
-    }
-    
-    // Usamos 'supabaseClient' para evitar colisiones con el objeto global de la librería cargada por CDN
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-    // Cache local de categorías para evitar llamadas repetitivas de red
+    // Variables globales de Supabase
+    let SUPABASE_URL = '';
+    let SUPABASE_KEY = '';
+    let supabaseClient = null;
     let categoriasCache = [];
 
-    // --- INICIALIZACIÓN ---
+    // Esperar a que el DOM cargue y verificar que las variables dinámicas de Vercel estén listas
     document.addEventListener('DOMContentLoaded', () => {
-      if (SUPABASE_URL && SUPABASE_KEY) {
-        inicializarApp();
+      // Extraemos del script /config.js inyectado por el backend de Vercel
+      SUPABASE_URL = window.env?.SUPABASE_URL || ''; 
+      SUPABASE_KEY = window.env?.SUPABASE_KEY || ''; 
+
+      if (!SUPABASE_URL || !SUPABASE_KEY) {
+        console.error("Error crítico: SUPABASE_URL o SUPABASE_KEY no están configuradas en el entorno de Vercel.");
+        document.getElementById('lista-platos').innerHTML = `
+          <div class="alert alert-danger" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            Error de configuración: Variables de entorno faltantes en Vercel.
+          </div>`;
+        return;
       }
+
+      // Inicializar el cliente una vez comprobados los datos
+      supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      inicializarApp();
     });
 
     async function inicializarApp() {
@@ -274,7 +283,6 @@
       contenedor.innerHTML = '';
 
       mesas.forEach(mesa => {
-        // Encontrar la sesión activa (sin hora_salida registrada)
         const sesionActiva = mesa.sesiones_mesa ? mesa.sesiones_mesa[0] : null;
 
         let badgeColor = 'bg-success';
@@ -344,7 +352,7 @@
       }
 
       const { error } = await supabaseClient
-        .from('mesas') // Corregido: Las actualizaciones de comensales van sobre las sesiones activas, no directamente a mesas
+        .from('sesiones_mesa') // Corregido: Actualización sobre sesiones activas
         .update({ comensales_actuales: nuevosComensales })
         .eq('id', sesionId);
 
