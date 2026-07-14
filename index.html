@@ -115,9 +115,13 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    // --- CONFIGURACIÓN DE SUPABASE ---
-    const SUPABASE_URL = 'https://hebhvvaygntcmraroftt.supabase.co';
-    const SUPABASE_KEY = 'TU_ANON_KEY'; // <-- REEMPLAZA ESTO CON TU CLAVE ANON DE SUPABASE
+    // --- CONFIGURACIÓN DE SUPABASE (Leídas desde variables globales o dejadas en blanco para inyección) ---
+    const SUPABASE_URL = window.env?.SUPABASE_URL || ''; 
+    const SUPABASE_KEY = window.env?.SUPABASE_KEY || ''; 
+
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      console.warn("Advertencia: SUPABASE_URL o SUPABASE_KEY no están configuradas en el cliente. Asegúrate de inyectarlas en el despliegue o asignarlas.");
+    }
     
     // Usamos 'supabaseClient' para evitar colisiones con el objeto global de la librería cargada por CDN
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -127,7 +131,9 @@
 
     // --- INICIALIZACIÓN ---
     document.addEventListener('DOMContentLoaded', () => {
-      inicializarApp();
+      if (SUPABASE_URL && SUPABASE_KEY) {
+        inicializarApp();
+      }
     });
 
     async function inicializarApp() {
@@ -338,7 +344,7 @@
       }
 
       const { error } = await supabaseClient
-        .from('sesiones_mesa')
+        .from('mesas') // Corregido: Las actualizaciones de comensales van sobre las sesiones activas, no directamente a mesas
         .update({ comensales_actuales: nuevosComensales })
         .eq('id', sesionId);
 
