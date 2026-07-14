@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sabor Control - Sistema de Buffet Relacional</title>
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    .status-disponible { border-left: 5px solid #198754; }
+    .status-recargando { border-left: 5px solid #ffc107; }
+    .status-agotado { border-left: 5px solid #dc3545; }
+  </style>
+</head>
+<body class="bg-light">
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+      <span class="navbar-brand mb-0 h1">
+        <i class="bi bi-egg-fried me-2"></i> Buffet Control (Relacional)
+      </span>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="row">
+      
+      <!-- Panel Izquierdo: Gestión del Buffet (Comida) -->
+      <div class="col-md-7 mb-4">
+        <div class="card shadow-sm">
+          <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 text-dark">Barra de Buffet</h5>
+            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalPlato" onclick="cargarCategoriasEnFormulario()">
+              <i class="bi bi-plus-circle me-1"></i> Nuevo Plato
+            </button>
+          </div>
+          <div class="card-body">
+            <div id="lista-platos" class="row g-3">
+              <!-- Render dinámico -->
+              <div class="text-center text-muted">Cargando la línea de comida...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel Derecho: Control de Ocupación y Mesas -->
+      <div class="col-md-5 mb-4">
+        <div class="card shadow-sm mb-4">
+          <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 text-dark">Mesas y Ocupación</h5>
+            <button class="btn btn-sm btn-outline-secondary" onclick="inicializarApp()">
+              <i class="bi bi-arrow-clockwise"></i>
+            </button>
+          </div>
+          <div class="card-body">
+            <div id="lista-mesas" class="list-group">
+              <!-- Render dinámico -->
+              <div class="text-center text-muted">Cargando mesas...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal para Registrar Platos -->
+  <div class="modal fade" id="modalPlato" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Registrar Nuevo Platillo</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="form-plato">
+            <div class="mb-3">
+              <label class="form-label">Nombre del Plato</label>
+              <input type="text" id="plato-nombre" class="form-control" required placeholder="Ej. Ceviche de la casa">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Categoría (Desde DB)</label>
+              <select id="plato-categoria" class="form-select" required>
+                <!-- Se poblará desde la base de datos para mantener integridad -->
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Precio Extra / Premium</label>
+              <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" step="0.01" id="plato-precio" class="form-control" value="0.00" required>
+              </div>
+              <small class="text-muted">Dejar en 0.00 si entra en el buffet libre estándar.</small>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Estado Inicial</label>
+              <select id="plato-estado" class="form-select">
+                <option value="Disponible">Disponible</option>
+                <option value="Recargando">Necesita Recarga</option>
+                <option value="Agotado">Agotado</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Guardar en Supabase</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Supabase JS Client & Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    // --- CONFIGURACIÓN DE SUPABASE ---
+    const SUPABASE_URL = 'https://TU_PROYECTO.supabase.co';
+    const SUPABASE_KEY = 'TU_ANON_KEY';
+    
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // Cache local de categorías para evitar llamadas innecesarias
+    let categoriasCache = [];
+
+    // --- INICIALIZACIÓN ---
+    document.addEventListener('DOMContentLoaded', () => {
+      inicializarApp();
+    });
+
+    async function inicializarApp() {
+      await obtenerCategorias();
+      await obtenerPlatos();
+      await obtenerMesasYSesiones();
+    }
+
+    // --- OBTENER CATEGORÍAS ---
+    async function obtenerCategorias() {
+      const { data, error } = await supabase.from('categorias').select('*');
+      if (error) console.error('Error al obtener categorías:', error);
+      else categoriasCache = data;
+    }
+
+    // Llenar el select del modal de platos
+    function cargarCategoriasEnFormulario() {
+      const select = document.getElementById('plato-categoria');
+      select.innerHTML = '';
+      categoriasCache.forEach(cat => {
+        select.innerHTML += `<option value="${cat.id}">${cat.nombre}</option>`;
+      });
+    }
+
+    // --- CONTROL DE PLATOS (READ & UPDATE) ---
+    async function obtenerPlatos() {
+      // Consulta relacional: Traemos el plato junto con el nombre de su categoría asociada
+      const { data, error } = await supabase
+        .from('platos')
+        .select(`
+          id,
+          nombre,
+          estado,
+          precio_premium,
+          categorias ( nombre )
+        `)
+        .order('id', { ascending: false });
+
+      if (error) return console.error('Error cargando platos:', error);
+
+      const contenedor = document.getElementById('lista-platos');
+      contenedor.innerHTML = '';
+
+      data.forEach(plato => {
+        let borderClass = 'status-disponible';
+        let badgeColor = 'bg-success';
+        if (plato.estado === 'Recargando') { borderClass = 'status-recargando'; badgeColor = 'bg-warning text-dark'; }
+        if (plato.estado === 'Agotado') { borderClass = 'status-agotado'; badgeColor = 'bg-danger'; }
+
+        const badgePrecioExtra = plato.precio_premium > 0 
+          ? `<span class="badge bg-secondary">+$${parseFloat(plato.precio_premium).toFixed(2)}</span>` 
+          : '';
+
+        contenedor.innerHTML += `
+          <div class="col-12">
+            <div class="card shadow-sm ${borderClass}">
+              <div class="card-body d-flex justify-content-between align-items-center py-2">
+                <div>
+                  <h6 class="mb-0 fw-bold">${plato.nombre} ${badgePrecioExtra}</h6>
+                  <small class="text-muted">${plato.categorias?.nombre || 'Sin categoría'}</small>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="badge ${badgeColor}">${plato.estado}</span>
+                  <select class="form-select form-select-sm" style="width: 120px;" onchange="actualizarEstadoPlato(${plato.id}, this.value)">
+                    <option value="Disponible" ${plato.estado === 'Disponible' ? 'selected' : ''}>Disponible</option>
+                    <option value="Recargando" ${plato.estado === 'Recargando' ? 'selected' : ''}>Recargar</option>
+                    <option value="Agotado" ${plato.estado === 'Agotado' ? 'selected' : ''}>Agotado</option>
+                  </select>
+                  <button class="btn btn-sm btn-outline-danger border-0" onclick="eliminarPlato(${plato.id})">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // Insertar nuevo plato
+    document.getElementById('form-plato').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const nombre = document.getElementById('plato-nombre').value;
+      const categoria_id = document.getElementById('plato-categoria').value;
+      const precio_premium = parseFloat(document.getElementById('plato-precio').value);
+      const estado = document.getElementById('plato-estado').value;
+
+      const { error } = await supabase
+        .from('platos')
+        .insert([{ nombre, categoria_id, precio_premium, estado }]);
+
+      if (error) {
+        alert('Error al insertar: ' + error.message);
+      } else {
+        document.getElementById('form-plato').reset();
+        bootstrap.Modal.getInstance(document.getElementById('modalPlato')).hide();
+        obtenerPlatos();
+      }
+    });
+
+    async function actualizarEstadoPlato(id, nuevoEstado) {
+      const { error } = await supabase
+        .from('platos')
+        .update({ estado: nuevoEstado, actualizado_en: new Date() })
+        .eq('id', id);
+
+      if (error) console.error(error);
+      obtenerPlatos();
+    }
+
+    async function eliminarPlato(id) {
+      if (confirm('¿Eliminar este platillo del sistema?')) {
+        const { error } = await supabase.from('platos').delete().eq('id', id);
+        if (error) console.error(error);
+        obtenerPlatos();
+      }
+    }
+
+    // --- CONTROL DE MESAS Y SESIONES RELACIONADAS ---
+    async function obtenerMesasYSesiones() {
+      // Obtenemos mesas y anidamos su sesión activa (aquella donde 'hora_salida' sea nula)
+      const { data: mesas, error } = await supabase
+        .from('mesas')
+        .select(`
+          id,
+          numero_mesa,
+          capacidad,
+          estado,
+          sesiones_mesa (
+            id,
+            comensales_actuales,
+            hora_entrada
+          )
+        `)
+        .order('numero_mesa', { ascending: true });
+
+      if (error) return console.error('Error cargando mesas y sesiones:', error);
+
+      const contenedor = document.getElementById('lista-mesas');
+      contenedor.innerHTML = '';
+
+      mesas.forEach(mesa => {
+        // Buscamos si tiene una sesión de ocupación activa (sin hora_salida)
+        // sesiones_mesa llega como arreglo debido a la relación 1-a-muchos en la consulta
+        const sesionActiva = mesa.sesiones_mesa ? mesa.sesiones_mesa[0] : null;
+
+        let badgeColor = 'bg-success';
+        if (mesa.estado === 'Ocupada') badgeColor = 'bg-danger';
+        if (mesa.estado === 'Reservada') badgeColor = 'bg-warning text-dark';
+
+        const comensales = sesionActiva ? sesionActiva.comensales_actuales : 0;
+
+        contenedor.innerHTML += `
+          <div class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <span class="badge ${badgeColor} me-2">Mesa ${mesa.numero_mesa}</span>
+              <small class="text-muted">
+                Capacidad: ${mesa.capacidad} | 
+                Comensales: <strong class="${comensales > mesa.capacidad ? 'text-danger' : ''}">${comensales}</strong>
+              </small>
+            </div>
+            <div class="d-flex gap-1">
+              ${mesa.estado === 'Libre' 
+                ? `<button class="btn btn-sm btn-outline-primary py-1 px-2" onclick="abrirSesion(${mesa.id})">
+                    <i class="bi bi-box-arrow-in-right me-1"></i>Ocupar
+                   </button>`
+                : `<button class="btn btn-sm btn-outline-success" onclick="actualizarComensales(${mesa.id}, ${sesionActiva.id}, ${comensales + 1})">
+                    <i class="bi bi-plus-lg"></i>
+                   </button>
+                   <button class="btn btn-sm btn-outline-secondary" onclick="actualizarComensales(${mesa.id}, ${sesionActiva.id}, ${comensales - 1})">
+                    <i class="bi bi-dash-lg"></i>
+                   </button>
+                   <button class="btn btn-sm btn-danger py-1 px-2" onclick="cerrarSesion(${mesa.id}, ${sesionActiva.id})">
+                    <i class="bi bi-calculator me-1"></i>Cerrar
+                   </button>`
+              }
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // Abrir una nueva sesión transaccional para la mesa
+    async function abrirSesion(mesaId) {
+      const comensales = prompt('¿Cuántas personas ingresan a la mesa?', '2');
+      if (!comensales || isNaN(comensales) || parseInt(comensales) <= 0) return;
+
+      // 1. Crear registro en sesiones_mesa
+      const { data: sesion, error: errorSesion } = await supabase
+        .from('sesiones_mesa')
+        .insert([{ 
+          mesa_id: mesaId, 
+          comensales_actuales: parseInt(comensales),
+          estado_pago: 'Pendiente'
+        }])
+        .select();
+
+      if (errorSesion) return alert('Error al iniciar sesión: ' + errorSesion.message);
+
+      // 2. Actualizar el estado físico de la mesa a 'Ocupada'
+      const { error: errorMesa } = await supabase
+        .from('mesas')
+        .update({ estado: 'Ocupada' })
+        .eq('id', mesaId);
+
+      if (errorMesa) console.error('Error al actualizar estado mesa:', errorMesa);
+
+      obtenerMesasYSesiones();
+    }
+
+    // Actualizar dinámicamente el número de comensales en la sesión activa
+    async function actualizarComensales(mesaId, sesionId, nuevosComensales) {
+      if (nuevosComensales <= 0) {
+        // Si bajan a 0 personas, procedemos a cerrar la cuenta de la mesa directamente
+        return cerrarSesion(mesaId, sesionId);
+      }
+
+      const { error } = await supabase
+        .from('sesiones_mesa')
+        .update({ comensales_actuales: nuevosComensales })
+        .eq('id', sesionId);
+
+      if (error) console.error(error);
+      obtenerMesasYSesiones();
+    }
+
+    // Finalizar sesión de consumo (Cierre de cuenta)
+    async function cerrarSesion(mesaId, sesionId) {
+      if (!confirm('¿Desea cerrar la mesa y procesar el cobro final del buffet?')) return;
+
+      // 1. Finalizar sesión transaccional (guardar hora de salida y estado pagado)
+      const { error: errorSesion } = await supabase
+        .from('sesiones_mesa')
+        .update({ 
+          hora_salida: new Date(),
+          estado_pago: 'Pagado'
+        })
+        .eq('id', sesionId);
+
+      if (errorSesion) return alert('Error al cerrar la sesión: ' + errorSesion.message);
+
+      // 2. Liberar el estado físico de la mesa
+      const { error: errorMesa } = await supabase
+        .from('mesas')
+        .update({ estado: 'Libre' })
+        .eq('id', mesaId);
+
+      if (errorMesa) console.error(errorMesa);
+
+      alert('¡Cuenta procesada con éxito! Mesa liberada.');
+      obtenerMesasYSesiones();
+    }
+  </script>
+</body>
+</html>
