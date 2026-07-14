@@ -2,7 +2,7 @@
   "routes": [
     {
       "src": "/config.js",
-      "dest": "/api/config.,mjs"
+      "dest": "/api/config.mjs"
     }
   ]
 }
