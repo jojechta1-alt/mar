@@ -224,14 +224,14 @@
     // Insertar nuevo plato
     document.getElementById('form-plato').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const nombre = document.getElementById('plato-nombre').value;
+      const platoNombre = document.getElementById('plato-nombre').value;
       const categoria_id = document.getElementById('plato-categoria').value;
       const precio_premium = parseFloat(document.getElementById('plato-precio').value);
       const estado = document.getElementById('plato-estado').value;
 
       const { error } = await supabaseClient
         .from('platos')
-        .insert([{ nombre, categoria_id, precio_premium, estado }]);
+        .insert([{ nombre: platoNombre, categoria_id, precio_premium, estado }]);
 
       if (error) {
         alert('Error al insertar: ' + error.message);
@@ -283,13 +283,17 @@
       contenedor.innerHTML = '';
 
       mesas.forEach(mesa => {
-        const sesionActiva = mesa.sesiones_mesa ? mesa.sesiones_mesa[0] : null;
+        // CORRECCIÓN: Validamos que exista el arreglo de sesiones y que contenga al menos un registro activo
+        const sesionActiva = (mesa.sesiones_mesa && mesa.sesiones_mesa.length > 0) 
+          ? mesa.sesiones_mesa[0] 
+          : null;
 
         let badgeColor = 'bg-success';
         if (mesa.estado === 'Ocupada') badgeColor = 'bg-danger';
         if (mesa.estado === 'Reservada') badgeColor = 'bg-warning text-dark';
 
         const comensales = sesionActiva ? sesionActiva.comensales_actuales : 0;
+        const sesionId = sesionActiva ? sesionActiva.id : null;
 
         contenedor.innerHTML += `
           <div class="list-group-item d-flex justify-content-between align-items-center">
@@ -301,17 +305,17 @@
               </small>
             </div>
             <div class="d-flex gap-1">
-              ${mesa.estado === 'Libre' 
+              ${mesa.estado === 'Libre' || !sesionActiva
                 ? `<button class="btn btn-sm btn-outline-primary py-1 px-2" onclick="abrirSesion(${mesa.id})">
                     <i class="bi bi-box-arrow-in-right me-1"></i>Ocupar
                    </button>`
-                : `<button class="btn btn-sm btn-outline-success" onclick="actualizarComensales(${mesa.id}, ${sesionActiva.id}, ${comensales + 1})">
+                : `<button class="btn btn-sm btn-outline-success" onclick="actualizarComensales(${mesa.id}, ${sesionId}, ${comensales + 1})">
                     <i class="bi bi-plus-lg"></i>
                    </button>
-                   <button class="btn btn-sm btn-outline-secondary" onclick="actualizarComensales(${mesa.id}, ${sesionActiva.id}, ${comensales - 1})">
+                   <button class="btn btn-sm btn-outline-secondary" onclick="actualizarComensales(${mesa.id}, ${sesionId}, ${comensales - 1})">
                     <i class="bi bi-dash-lg"></i>
                    </button>
-                   <button class="btn btn-sm btn-danger py-1 px-2" onclick="cerrarSesion(${mesa.id}, ${sesionActiva.id})">
+                   <button class="btn btn-sm btn-danger py-1 px-2" onclick="cerrarSesion(${mesa.id}, ${sesionId})">
                     <i class="bi bi-calculator me-1"></i>Cerrar
                    </button>`
               }
@@ -352,7 +356,7 @@
       }
 
       const { error } = await supabaseClient
-        .from('sesiones_mesa') // Corregido: Actualización sobre sesiones activas
+        .from('sesiones_mesa')
         .update({ comensales_actuales: nuevosComensales })
         .eq('id', sesionId);
 
