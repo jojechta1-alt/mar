@@ -116,12 +116,13 @@
 
   <script>
     // --- CONFIGURACIÓN DE SUPABASE ---
-    const SUPABASE_URL = 'https://TU_PROYECTO.supabase.co';
-    const SUPABASE_KEY = 'TU_ANON_KEY';
+    const SUPABASE_URL = 'https://hebhvvaygntcmraroftt.supabase.co';
+    const SUPABASE_KEY = 'TU_ANON_KEY'; // <-- REEMPLAZA ESTO CON TU CLAVE ANON DE SUPABASE
     
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // Usamos 'supabaseClient' para evitar colisiones con el objeto global de la librería cargada por CDN
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // Cache local de categorías para evitar llamadas innecesarias
+    // Cache local de categorías para evitar llamadas repetitivas de red
     let categoriasCache = [];
 
     // --- INICIALIZACIÓN ---
@@ -137,7 +138,7 @@
 
     // --- OBTENER CATEGORÍAS ---
     async function obtenerCategorias() {
-      const { data, error } = await supabase.from('categorias').select('*');
+      const { data, error } = await supabaseClient.from('categorias').select('*');
       if (error) console.error('Error al obtener categorías:', error);
       else categoriasCache = data;
     }
@@ -153,8 +154,7 @@
 
     // --- CONTROL DE PLATOS (READ & UPDATE) ---
     async function obtenerPlatos() {
-      // Consulta relacional: Traemos el plato junto con el nombre de su categoría asociada
-      const { data, error } = await supabase
+      const { data, error } = await supabaseClient
         .from('platos')
         .select(`
           id,
@@ -214,7 +214,7 @@
       const precio_premium = parseFloat(document.getElementById('plato-precio').value);
       const estado = document.getElementById('plato-estado').value;
 
-      const { error } = await supabase
+      const { error } = await supabaseClient
         .from('platos')
         .insert([{ nombre, categoria_id, precio_premium, estado }]);
 
@@ -228,7 +228,7 @@
     });
 
     async function actualizarEstadoPlato(id, nuevoEstado) {
-      const { error } = await supabase
+      const { error } = await supabaseClient
         .from('platos')
         .update({ estado: nuevoEstado, actualizado_en: new Date() })
         .eq('id', id);
@@ -239,16 +239,15 @@
 
     async function eliminarPlato(id) {
       if (confirm('¿Eliminar este platillo del sistema?')) {
-        const { error } = await supabase.from('platos').delete().eq('id', id);
+        const { error } = await supabaseClient.from('platos').delete().eq('id', id);
         if (error) console.error(error);
         obtenerPlatos();
       }
     }
 
-    // --- CONTROL DE MESAS Y SESIONES RELACIONADAS ---
+    // --- CONTROL DE MESAS Y SESIONES ---
     async function obtenerMesasYSesiones() {
-      // Obtenemos mesas y anidamos su sesión activa (aquella donde 'hora_salida' sea nula)
-      const { data: mesas, error } = await supabase
+      const { data: mesas, error } = await supabaseClient
         .from('mesas')
         .select(`
           id,
@@ -269,8 +268,7 @@
       contenedor.innerHTML = '';
 
       mesas.forEach(mesa => {
-        // Buscamos si tiene una sesión de ocupación activa (sin hora_salida)
-        // sesiones_mesa llega como arreglo debido a la relación 1-a-muchos en la consulta
+        // Encontrar la sesión activa (sin hora_salida registrada)
         const sesionActiva = mesa.sesiones_mesa ? mesa.sesiones_mesa[0] : null;
 
         let badgeColor = 'bg-success';
@@ -309,13 +307,11 @@
       });
     }
 
-    // Abrir una nueva sesión transaccional para la mesa
     async function abrirSesion(mesaId) {
       const comensales = prompt('¿Cuántas personas ingresan a la mesa?', '2');
       if (!comensales || isNaN(comensales) || parseInt(comensales) <= 0) return;
 
-      // 1. Crear registro en sesiones_mesa
-      const { data: sesion, error: errorSesion } = await supabase
+      const { data: sesion, error: errorSesion } = await supabaseClient
         .from('sesiones_mesa')
         .insert([{ 
           mesa_id: mesaId, 
@@ -326,8 +322,7 @@
 
       if (errorSesion) return alert('Error al iniciar sesión: ' + errorSesion.message);
 
-      // 2. Actualizar el estado físico de la mesa a 'Ocupada'
-      const { error: errorMesa } = await supabase
+      const { error: errorMesa } = await supabaseClient
         .from('mesas')
         .update({ estado: 'Ocupada' })
         .eq('id', mesaId);
@@ -337,14 +332,12 @@
       obtenerMesasYSesiones();
     }
 
-    // Actualizar dinámicamente el número de comensales en la sesión activa
     async function actualizarComensales(mesaId, sesionId, nuevosComensales) {
       if (nuevosComensales <= 0) {
-        // Si bajan a 0 personas, procedemos a cerrar la cuenta de la mesa directamente
         return cerrarSesion(mesaId, sesionId);
       }
 
-      const { error } = await supabase
+      const { error } = await supabaseClient
         .from('sesiones_mesa')
         .update({ comensales_actuales: nuevosComensales })
         .eq('id', sesionId);
@@ -353,12 +346,10 @@
       obtenerMesasYSesiones();
     }
 
-    // Finalizar sesión de consumo (Cierre de cuenta)
     async function cerrarSesion(mesaId, sesionId) {
       if (!confirm('¿Desea cerrar la mesa y procesar el cobro final del buffet?')) return;
 
-      // 1. Finalizar sesión transaccional (guardar hora de salida y estado pagado)
-      const { error: errorSesion } = await supabase
+      const { error: errorSesion } = await supabaseClient
         .from('sesiones_mesa')
         .update({ 
           hora_salida: new Date(),
@@ -368,8 +359,7 @@
 
       if (errorSesion) return alert('Error al cerrar la sesión: ' + errorSesion.message);
 
-      // 2. Liberar el estado físico de la mesa
-      const { error: errorMesa } = await supabase
+      const { error: errorMesa } = await supabaseClient
         .from('mesas')
         .update({ estado: 'Libre' })
         .eq('id', mesaId);
